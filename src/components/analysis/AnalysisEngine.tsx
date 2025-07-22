@@ -141,36 +141,79 @@ export default function AnalysisEngine({ files, onAnalysisComplete }: AnalysisEn
         console.warn(`File type mismatch for ${file.name}: expected ${expectedType}, got ${file.type}`);
       }
 
-      // Extract text content using URL method first (more reliable for large files)
+      // Extract text content - try blob method first for Excel files, URL method for others
       let extractedText = '';
-      try {
-        console.log(`Attempting storage upload and URL extraction for ${file.name}...`);
-        
-        // Upload file to storage with proper error handling
-        const uploadPath = `analysis/${Date.now()}-${encodeURIComponent(file.name)}`;
-        const { publicUrl } = await blink.storage.upload(file, uploadPath, { 
-          upsert: true 
-        });
-        console.log(`Successfully uploaded ${file.name} to:`, publicUrl);
-        
-        // Wait for file to be available and extract
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        extractedText = await blink.data.extractFromUrl(publicUrl);
-        console.log(`URL extraction successful for ${file.name}. Text length: ${extractedText.length}`);
-        
-      } catch (urlError) {
-        console.log(`URL extraction failed for ${file.name}, trying blob method:`, urlError);
+      const isExcelFile = extension === 'xlsx' || extension === 'xls';
+      
+      if (isExcelFile) {
+        // For Excel files, try blob extraction first to avoid ZIP format detection issues
         try {
-          // Fallback to blob extraction with proper file handling
-          console.log(`Attempting direct blob extraction for ${file.name}...`);
+          console.log(`Attempting direct blob extraction for Excel file ${file.name}...`);
           
-          // Use the original file directly without creating a new blob
-          extractedText = await blink.data.extractFromBlob(file);
+          // Create a fresh file blob to ensure proper format
+          const fileBlob = new File([file], file.name, { 
+            type: file.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+          });
+          
+          extractedText = await blink.data.extractFromBlob(fileBlob);
           console.log(`Blob extraction successful for ${file.name}. Text length: ${extractedText.length}`);
           
         } catch (blobError) {
-          console.error(`Both extraction methods failed for ${file.name}:`, { urlError, blobError });
-          throw new Error(`Unable to extract content from ${file.name}. The file may be corrupted, password-protected, or contain only images. Please ensure the file contains readable text content.`);
+          console.log(`Blob extraction failed for ${file.name}, trying URL method:`, blobError);
+          try {
+            // Fallback to URL method with proper file type
+            console.log(`Attempting storage upload and URL extraction for ${file.name}...`);
+            
+            const uploadPath = `analysis/${Date.now()}-${encodeURIComponent(file.name)}`;
+            const { publicUrl } = await blink.storage.upload(file, uploadPath, { 
+              upsert: true 
+            });
+            console.log(`Successfully uploaded ${file.name} to:`, publicUrl);
+            
+            // Wait longer for Excel files to be processed
+            await new Promise(resolve => setTimeout(resolve, 3000));
+            extractedText = await blink.data.extractFromUrl(publicUrl);
+            console.log(`URL extraction successful for ${file.name}. Text length: ${extractedText.length}`);
+            
+          } catch (urlError) {
+            console.error(`Both extraction methods failed for ${file.name}:`, { blobError, urlError });
+            throw new Error(`Unable to extract content from ${file.name}. Excel files may require special handling. Please ensure the file is not password-protected and contains readable data.`);
+          }
+        }
+      } else {
+        // For PDF and Word files, try URL method first
+        try {
+          console.log(`Attempting storage upload and URL extraction for ${file.name}...`);
+          
+          const uploadPath = `analysis/${Date.now()}-${encodeURIComponent(file.name)}`;
+          const { publicUrl } = await blink.storage.upload(file, uploadPath, { 
+            upsert: true 
+          });
+          console.log(`Successfully uploaded ${file.name} to:`, publicUrl);
+          
+          // Wait for file to be available
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          extractedText = await blink.data.extractFromUrl(publicUrl);
+          console.log(`URL extraction successful for ${file.name}. Text length: ${extractedText.length}`);
+          
+        } catch (urlError) {
+          console.log(`URL extraction failed for ${file.name}, trying blob method:`, urlError);
+          try {
+            // Fallback to blob extraction
+            console.log(`Attempting direct blob extraction for ${file.name}...`);
+            
+            // Create a fresh file blob with proper type
+            const fileBlob = new File([file], file.name, { 
+              type: file.type || (extension === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+            });
+            
+            extractedText = await blink.data.extractFromBlob(fileBlob);
+            console.log(`Blob extraction successful for ${file.name}. Text length: ${extractedText.length}`);
+            
+          } catch (blobError) {
+            console.error(`Both extraction methods failed for ${file.name}:`, { urlError, blobError });
+            throw new Error(`Unable to extract content from ${file.name}. The file may be corrupted, password-protected, or contain only images. Please ensure the file contains readable text content.`);
+          }
         }
       }
 

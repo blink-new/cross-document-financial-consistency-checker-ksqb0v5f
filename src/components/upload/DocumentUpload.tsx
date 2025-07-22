@@ -34,6 +34,27 @@ export default function DocumentUpload({ files, onFilesChange, onAnalyze, isAnal
         return false;
       }
       
+      // Enhanced file type validation for better compatibility
+      const expectedTypes = {
+        'pdf': ['application/pdf'],
+        'docx': [
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          'application/msword'
+        ],
+        'xlsx': [
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'application/vnd.ms-excel',
+          'application/x-excel'
+        ]
+      };
+      
+      const expectedTypeList = expectedTypes[extension as keyof typeof expectedTypes] || [];
+      const hasValidType = !file.type || expectedTypeList.some(type => file.type === type) || file.type.includes('application/');
+      
+      if (!hasValidType) {
+        console.warn(`File type warning for ${file.name}: expected one of ${expectedTypeList.join(', ')}, got ${file.type}. Will attempt processing anyway.`);
+      }
+      
       // Check for duplicate files
       const isDuplicate = files.some(existingFile => 
         existingFile.name === file.name && existingFile.size === file.size
@@ -76,6 +97,27 @@ export default function DocumentUpload({ files, onFilesChange, onAnalyze, isAnal
       if (!isValid) {
         console.warn(`Skipping invalid dropped file: ${file.name} (extension: ${extension})`);
         return false;
+      }
+      
+      // Enhanced file type validation for better compatibility
+      const expectedTypes = {
+        'pdf': ['application/pdf'],
+        'docx': [
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          'application/msword'
+        ],
+        'xlsx': [
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'application/vnd.ms-excel',
+          'application/x-excel'
+        ]
+      };
+      
+      const expectedTypeList = expectedTypes[extension as keyof typeof expectedTypes] || [];
+      const hasValidType = !file.type || expectedTypeList.some(type => file.type === type) || file.type.includes('application/');
+      
+      if (!hasValidType) {
+        console.warn(`File type warning for dropped ${file.name}: expected one of ${expectedTypeList.join(', ')}, got ${file.type}. Will attempt processing anyway.`);
       }
       
       // Check for duplicate files
