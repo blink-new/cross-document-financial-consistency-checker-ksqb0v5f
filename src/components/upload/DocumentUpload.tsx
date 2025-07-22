@@ -13,12 +13,43 @@ interface DocumentUploadProps {
 export default function DocumentUpload({ files, onFilesChange, onAnalyze, isAnalyzing }: DocumentUploadProps) {
   const handleFileSelect = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = Array.from(event.target.files || []);
+    console.log('Selected files:', selectedFiles.map(f => ({ name: f.name, size: f.size, type: f.type })));
+    
     const validFiles = selectedFiles.filter(file => {
+      // Enhanced file validation
+      if (!file || file.size === 0) {
+        console.warn(`Skipping empty file: ${file.name}`);
+        return false;
+      }
+      
+      if (file.size > 50 * 1024 * 1024) { // 50MB limit
+        console.warn(`Skipping large file: ${file.name} (${file.size} bytes > 50MB)`);
+        return false;
+      }
+      
       const extension = file.name.toLowerCase().split('.').pop();
-      return ['pdf', 'docx', 'xlsx'].includes(extension || '');
+      const isValid = ['pdf', 'docx', 'xlsx'].includes(extension || '');
+      if (!isValid) {
+        console.warn(`Skipping invalid file: ${file.name} (extension: ${extension})`);
+        return false;
+      }
+      
+      // Check for duplicate files
+      const isDuplicate = files.some(existingFile => 
+        existingFile.name === file.name && existingFile.size === file.size
+      );
+      if (isDuplicate) {
+        console.warn(`Skipping duplicate file: ${file.name}`);
+        return false;
+      }
+      
+      return true;
     });
     
-    onFilesChange([...files, ...validFiles]);
+    console.log('Valid files to add:', validFiles.map(f => f.name));
+    if (validFiles.length > 0) {
+      onFilesChange([...files, ...validFiles]);
+    }
     // Reset input value to allow selecting the same file again
     event.target.value = '';
   }, [files, onFilesChange]);
@@ -26,12 +57,43 @@ export default function DocumentUpload({ files, onFilesChange, onAnalyze, isAnal
   const handleDrop = useCallback((event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     const droppedFiles = Array.from(event.dataTransfer.files);
+    console.log('Dropped files:', droppedFiles.map(f => ({ name: f.name, size: f.size, type: f.type })));
+    
     const validFiles = droppedFiles.filter(file => {
+      // Enhanced file validation for dropped files
+      if (!file || file.size === 0) {
+        console.warn(`Skipping empty dropped file: ${file.name}`);
+        return false;
+      }
+      
+      if (file.size > 50 * 1024 * 1024) { // 50MB limit
+        console.warn(`Skipping large dropped file: ${file.name} (${file.size} bytes > 50MB)`);
+        return false;
+      }
+      
       const extension = file.name.toLowerCase().split('.').pop();
-      return ['pdf', 'docx', 'xlsx'].includes(extension || '');
+      const isValid = ['pdf', 'docx', 'xlsx'].includes(extension || '');
+      if (!isValid) {
+        console.warn(`Skipping invalid dropped file: ${file.name} (extension: ${extension})`);
+        return false;
+      }
+      
+      // Check for duplicate files
+      const isDuplicate = files.some(existingFile => 
+        existingFile.name === file.name && existingFile.size === file.size
+      );
+      if (isDuplicate) {
+        console.warn(`Skipping duplicate dropped file: ${file.name}`);
+        return false;
+      }
+      
+      return true;
     });
     
-    onFilesChange([...files, ...validFiles]);
+    console.log('Valid dropped files to add:', validFiles.map(f => f.name));
+    if (validFiles.length > 0) {
+      onFilesChange([...files, ...validFiles]);
+    }
   }, [files, onFilesChange]);
 
   const handleDragOver = useCallback((event: React.DragEvent<HTMLDivElement>) => {

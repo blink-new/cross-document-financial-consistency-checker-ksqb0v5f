@@ -113,31 +113,72 @@ export default function AnalysisEngine({ files, onAnalysisComplete }: AnalysisEn
     setProgress(((index + 1) / files.length) * 100);
 
     try {
-      console.log(`Analyzing document: ${file.name}`);
+      console.log(`Analyzing document: ${file.name} (${file.size} bytes, type: ${file.type})`);
       
-      // Upload file to storage first
-      const { publicUrl } = await blink.storage.upload(file, `analysis/${file.name}`, { upsert: true });
-      console.log(`Uploaded ${file.name} to:`, publicUrl);
+      // Enhanced file validation
+      if (!file || file.size === 0) {
+        throw new Error(`Invalid file: ${file.name} - file is empty or corrupted`);
+      }
 
-      // Extract text content
+      if (file.size > 50 * 1024 * 1024) { // 50MB limit
+        throw new Error(`File too large: ${file.name} - maximum size is 50MB`);
+      }
+
+      const extension = file.name.toLowerCase().split('.').pop();
+      if (!['pdf', 'docx', 'xlsx'].includes(extension || '')) {
+        throw new Error(`Unsupported file type: ${extension} - only PDF, DOCX, and XLSX files are supported`);
+      }
+
+      // Validate file type matches extension
+      const expectedTypes = {
+        'pdf': 'application/pdf',
+        'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      };
+      
+      const expectedType = expectedTypes[extension as keyof typeof expectedTypes];
+      if (file.type && file.type !== expectedType && !file.type.includes('application/')) {
+        console.warn(`File type mismatch for ${file.name}: expected ${expectedType}, got ${file.type}`);
+      }
+
+      // Extract text content using URL method first (more reliable for large files)
       let extractedText = '';
       try {
+        console.log(`Attempting storage upload and URL extraction for ${file.name}...`);
+        
+        // Upload file to storage with proper error handling
+        const uploadPath = `analysis/${Date.now()}-${encodeURIComponent(file.name)}`;
+        const { publicUrl } = await blink.storage.upload(file, uploadPath, { 
+          upsert: true 
+        });
+        console.log(`Successfully uploaded ${file.name} to:`, publicUrl);
+        
+        // Wait for file to be available and extract
+        await new Promise(resolve => setTimeout(resolve, 2000));
         extractedText = await blink.data.extractFromUrl(publicUrl);
-        console.log(`Extracted text from ${file.name}:`, extractedText.substring(0, 500) + '...');
+        console.log(`URL extraction successful for ${file.name}. Text length: ${extractedText.length}`);
+        
       } catch (urlError) {
-        console.log(`URL extraction failed for ${file.name}, trying blob extraction:`, urlError);
+        console.log(`URL extraction failed for ${file.name}, trying blob method:`, urlError);
         try {
+          // Fallback to blob extraction with proper file handling
+          console.log(`Attempting direct blob extraction for ${file.name}...`);
+          
+          // Use the original file directly without creating a new blob
           extractedText = await blink.data.extractFromBlob(file);
-          console.log(`Blob extraction successful for ${file.name}`);
+          console.log(`Blob extraction successful for ${file.name}. Text length: ${extractedText.length}`);
+          
         } catch (blobError) {
-          console.error(`Both extraction methods failed for ${file.name}:`, blobError);
-          throw new Error(`Failed to extract content from ${file.name}`);
+          console.error(`Both extraction methods failed for ${file.name}:`, { urlError, blobError });
+          throw new Error(`Unable to extract content from ${file.name}. The file may be corrupted, password-protected, or contain only images. Please ensure the file contains readable text content.`);
         }
       }
 
       if (!extractedText || extractedText.trim().length === 0) {
-        throw new Error(`No text content found in ${file.name}`);
+        throw new Error(`No readable text content found in ${file.name}. The document may be empty, corrupted, or contain only images.`);
       }
+
+      console.log(`Extracted text preview from ${file.name}:`, extractedText.substring(0, 300) + '...');
 
       // Extract financial figures
       const figures = extractFinancialFigures(extractedText, file.name);
@@ -147,7 +188,7 @@ export default function AnalysisEngine({ files, onAnalysisComplete }: AnalysisEn
         fileName: file.name,
         extractedFigures: figures,
         extractionStatus: figures.length > 0 ? 'success' : 'partial',
-        errorMessage: figures.length === 0 ? 'No financial figures found in document' : undefined
+        errorMessage: figures.length === 0 ? 'No financial figures found in document. Please ensure the document contains financial data with clear labels and values.' : undefined
       };
 
     } catch (error) {
@@ -156,7 +197,7 @@ export default function AnalysisEngine({ files, onAnalysisComplete }: AnalysisEn
         fileName: file.name,
         extractedFigures: [],
         extractionStatus: 'failed',
-        errorMessage: error instanceof Error ? error.message : 'Unknown error occurred'
+        errorMessage: error instanceof Error ? error.message : 'Unknown error occurred during document analysis'
       };
     }
   }, [files.length, extractFinancialFigures]);

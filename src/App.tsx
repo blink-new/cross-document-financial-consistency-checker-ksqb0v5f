@@ -146,8 +146,23 @@ function App() {
   const { toast } = useToast();
 
   const handleFilesChange = useCallback((newFiles: File[]) => {
+    console.log('Files changed:', newFiles.map(f => ({ name: f.name, size: f.size, type: f.type })));
     setFiles(newFiles);
-  }, []);
+    
+    // Validate files and show warnings if needed
+    const invalidFiles = newFiles.filter(file => {
+      const extension = file.name.toLowerCase().split('.').pop();
+      return !['pdf', 'docx', 'xlsx'].includes(extension || '') || file.size === 0 || file.size > 50 * 1024 * 1024;
+    });
+    
+    if (invalidFiles.length > 0) {
+      toast({
+        title: "File Validation Warning",
+        description: `${invalidFiles.length} file(s) may have issues. Check console for details.`,
+        variant: "destructive",
+      });
+    }
+  }, [toast]);
 
   const handleStartAnalysis = useCallback(() => {
     if (files.length < 2) {
@@ -162,16 +177,33 @@ function App() {
   }, [files.length, toast]);
 
   const handleAnalysisComplete = useCallback((results: DocumentAnalysis[]) => {
+    console.log('Analysis complete. Results:', results);
     setAnalyses(results);
     setState('report');
     
     const successCount = results.filter(r => r.extractionStatus === 'success').length;
+    const partialCount = results.filter(r => r.extractionStatus === 'partial').length;
+    const failedCount = results.filter(r => r.extractionStatus === 'failed').length;
     const totalCount = results.length;
     
-    toast({
-      title: "Analysis Complete",
-      description: `Successfully analyzed ${successCount} of ${totalCount} documents.`,
-    });
+    if (successCount === 0 && partialCount === 0) {
+      toast({
+        title: "Analysis Failed",
+        description: `Unable to extract financial data from any of the ${totalCount} documents. Please check that your files contain readable financial information.`,
+        variant: "destructive",
+      });
+    } else if (failedCount > 0) {
+      toast({
+        title: "Analysis Partially Complete",
+        description: `Successfully processed ${successCount + partialCount} of ${totalCount} documents. ${failedCount} documents failed to process.`,
+        variant: "destructive",
+      });
+    } else {
+      toast({
+        title: "Analysis Complete",
+        description: `Successfully analyzed ${successCount} of ${totalCount} documents with financial data extracted.`,
+      });
+    }
   }, [toast]);
 
   const handleExportPDF = useCallback(() => {
